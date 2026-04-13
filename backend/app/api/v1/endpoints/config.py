@@ -75,6 +75,20 @@ async def delete_email(email_id: int, db: AsyncSession = Depends(get_db)):
         await db.commit()
     return {"status": "deleted"}
 
+@router.put("/emails/{email_id}")
+async def update_email(email_id: int, acc_update: EmailAccountCreate, db: AsyncSession = Depends(get_db)):
+    """依据前端新覆盖的数据改写原本的旧邮箱条目配置"""
+    result = await db.execute(select(EmailAccount).where(EmailAccount.id == email_id))
+    db_acc = result.scalar_one_or_none()
+    if db_acc:
+        db_acc.email = acc_update.email
+        db_acc.password = acc_update.password
+        db_acc.imap_server = acc_update.imap_server
+        db_acc.imap_port = acc_update.imap_port
+        db_acc.proxy_url = acc_update.proxy_url
+        await db.commit()
+    return {"status": "success"}
+
 @router.get("/emails/{email_id}/test")
 async def test_email_connection(email_id: int, db: AsyncSession = Depends(get_db)):
     """测试邮箱连接并抓取最新的验证码邮件"""

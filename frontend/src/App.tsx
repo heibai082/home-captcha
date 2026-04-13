@@ -4,6 +4,7 @@ function App() {
   const [globalConfig, setGlobalConfig] = useState({ target_url: '', global_proxy: '' });
   const [emails, setEmails] = useState<any[]>([]);
   const [newEmail, setNewEmail] = useState({ email: '', password: '', imap_server: '', imap_port: 993, proxy_url: '' });
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchGlobal();
@@ -29,17 +30,40 @@ function App() {
     alert('✅ 全局配置已成功保存并在后台实时生效！');
   };
 
-  const addEmail = async () => {
+  const addOrUpdateEmail = async () => {
     if(!newEmail.email || !newEmail.password || !newEmail.imap_server) {
       alert('请将必填项（邮箱、密码、服务器地址）填写完整'); return;
     }
-    await fetch('/api/v1/config/emails', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newEmail)
-    });
+    
+    if (editingId !== null) {
+      await fetch(`/api/v1/config/emails/${editingId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newEmail)
+      });
+      alert('✅ 对应的邮箱监控规则已成功更新');
+    } else {
+      await fetch('/api/v1/config/emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newEmail)
+      });
+    }
+    
     setNewEmail({ email: '', password: '', imap_server: '', imap_port: 993, proxy_url: '' });
+    setEditingId(null);
     fetchEmails();
+  };
+
+  const editEmail = (acc: any) => {
+    setNewEmail({ email: acc.email, password: acc.password, imap_server: acc.imap_server, imap_port: acc.imap_port, proxy_url: acc.proxy_url || '' });
+    setEditingId(acc.id);
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  };
+
+  const cancelEdit = () => {
+    setNewEmail({ email: '', password: '', imap_server: '', imap_port: 993, proxy_url: '' });
+    setEditingId(null);
   };
 
   const delEmail = async (id: number) => {
@@ -101,15 +125,18 @@ function App() {
               </div>
             </div>
             <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
-              <button style={{backgroundColor: '#10b981', padding: '0.5rem 1rem'}} onClick={() => testEmail(acc.id)}>📶 连通测试</button>
+              <button style={{backgroundColor: '#10b981', padding: '0.4rem 0.8rem'}} onClick={() => testEmail(acc.id)}>📶 测试</button>
+              <button style={{backgroundColor: '#6366f1', padding: '0.4rem 0.8rem'}} onClick={() => editEmail(acc)}>编辑</button>
               <button className="danger" onClick={() => delEmail(acc.id)}>删除</button>
             </div>
           </div>
         ))}
         {emails.length === 0 && <div style={{ color: 'var(--text-dim)', marginBottom: '1rem', padding: '1rem', background: 'var(--bg)', borderRadius: '8px' }}>🚀您目前没有关联任何邮箱。填在下方的即刻便能收信！</div>}
 
-        <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'var(--bg)', borderRadius: '8px', border: '1px dashed var(--border)' }}>
-          <h3 style={{ marginTop: 0, color: 'var(--primary)' }}>增加需要监控提取的新邮箱</h3>
+        <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'var(--bg)', borderRadius: '8px', border: editingId ? '1px solid var(--primary)' : '1px dashed var(--border)' }}>
+          <h3 style={{ marginTop: 0, color: editingId ? 'var(--primary)' : 'var(--text)' }}>
+            {editingId ? '🛠️ 正在修改邮箱配置' : '加需要监控提取的新邮箱'}
+          </h3>
           <div className="row">
             <div className="form-group">
               <label>目标邮箱地址</label>
@@ -130,7 +157,10 @@ function App() {
               <input value={newEmail.proxy_url} onChange={e => setNewEmail({...newEmail, proxy_url: e.target.value})} placeholder="选填, 不填跟随全局" />
             </div>
           </div>
-          <button onClick={addEmail}>➕ 放进后台实时运转序列</button>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button onClick={addOrUpdateEmail}>{editingId ? '💾 保存当前修改' : '➕ 放进后台实时运转序列'}</button>
+            {editingId && <button style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }} onClick={cancelEdit}>取消修改</button>}
+          </div>
         </div>
       </section>
     </div>
