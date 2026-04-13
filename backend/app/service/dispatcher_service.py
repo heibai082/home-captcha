@@ -2,6 +2,7 @@ import httpx
 from app.db.session import AsyncSessionLocal
 from app.model.models import GlobalConfig
 from sqlalchemy import select
+from app.service.log_service import record_log
 
 async def dispatch_webhook(source: str, content: str, code: str):
     """
@@ -13,7 +14,7 @@ async def dispatch_webhook(source: str, content: str, code: str):
         glob = glob_query.scalar_one_or_none()
         
     if not glob or not glob.webhook_url:
-        print("未在系统中配置目标 Webhook URL，系统抓取到验证码但不予转发。")
+        record_log("WARNING", "Webhook 推流", "成功捕捉到了验证码，但您尚未设置转发地址，数据被抛弃！")
         return
     
     target_url = glob.webhook_url
@@ -36,6 +37,6 @@ async def dispatch_webhook(source: str, content: str, code: str):
     async with httpx.AsyncClient(proxies=proxies) as client:
         try:
             response = await client.post(target_url, json=payload, timeout=10.0)
-            print(f"✅ 成功将验证码分发至 Webhook: {response.status_code}")
+            record_log("INFO", "外发触达", f"🚀 验证码已成功推送至您配置终端！服务器回传: {response.status_code}")
         except Exception as e:
-            print(f"❌ 分发 Webhook 遇到错误: {e}")
+            record_log("ERROR", "推流爆破", f"尝试推送时网络链路崩塌: {e}")

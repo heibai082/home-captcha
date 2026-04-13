@@ -9,6 +9,7 @@ from app.service.dispatcher_service import dispatch_webhook
 from app.db.session import AsyncSessionLocal
 from app.model.models import EmailAccount, GlobalConfig
 from sqlalchemy import select
+from app.service.log_service import record_log
 
 # 重写标准库原生的 IMAP4_SSL ，使其内部创建的 socket 连接走独立代理，而不污染全局
 class ProxyIMAP4SSL(imaplib.IMAP4_SSL):
@@ -47,7 +48,7 @@ def parse_proxy(proxy_url: str):
 
 async def poll_emails_background():
     """在后台不间断运转的任务：轮询检查配置的所有邮箱有没有新邮件"""
-    print("📧 后台邮箱监听服务已启动...")
+    record_log("INFO", "守护中心", "📧 后台轮询主线引擎已启动，时刻帮您蹲点")
     while True:
         try:
             # 每次循环都开启一个独立且短暂的查询以确保读取的是网页上的最新配置
@@ -67,7 +68,7 @@ async def poll_emails_background():
                     # 放入多线程执行实际的阻塞式读取任务以不堵塞整个服务器
                     await asyncio.to_thread(check_single_account, account.email, account.password, account.imap_server, account.imap_port, proxy_str)
         except Exception as e:
-            print(f"后台循环拉取配置遇到问题可能数据库还未写盘: {e}")
+            record_log("WARNING", "DB 同步", f"后台循环探测引擎读取配置受阻: {e}")
             
         await asyncio.sleep(20)  # 每次轮询休息间隔秒数
 
@@ -112,7 +113,7 @@ def check_single_account(email_addr: str, password: str, imap_server: str, imap_
         
         client.logout()
     except Exception as e:
-        print(f"[{email_addr}] IMAP 巡检出错或超时（如果在群晖/NAS 连谷歌超时请检查您的代理）: {e}")
+        record_log("ERROR", "收信链路", f"[{email_addr}] 握手或解包彻底失败（网络不通/代理死链接）: {e}")
 
 def extract_email_text(msg) -> str:
     """提取纯文本或将 HTML 里的文字抽出来"""

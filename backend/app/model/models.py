@@ -20,3 +20,13 @@ class EmailAccount(Base):
     imap_port: Mapped[int] = mapped_column(Integer, default=993)
     proxy_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+class SystemLog(Base):
+    """全局操作与故障拦截审计归档表"""
+    __tablename__ = "system_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    level = Column(String)  # INFO, WARNING, ERROR
+    source = Column(String)  # 来源模块: API, IMAP, WEBHOOK
+    message = Column(String) # 具体明细
+    created_at = Column(String) # 注入格式化的发生时间

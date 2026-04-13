@@ -5,11 +5,18 @@ function App() {
   const [emails, setEmails] = useState<any[]>([]);
   const [newEmail, setNewEmail] = useState({ email: '', password: '', imap_server: '', imap_port: 993, proxy_url: '' });
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [logs, setLogs] = useState<any[]>([]);
 
   useEffect(() => {
     fetchGlobal();
     fetchEmails();
+    fetchLogs();
   }, []);
+
+  const fetchLogs = async () => {
+    const res = await fetch('/api/v1/config/logs');
+    if(res.ok) setLogs(await res.json());
+  };
 
   const fetchGlobal = async () => {
     const res = await fetch('/api/v1/config/global');
@@ -28,6 +35,13 @@ function App() {
       body: JSON.stringify(globalConfig)
     });
     alert('✅ 全局配置已成功保存并在后台实时生效！');
+  };
+
+  const testGlobalWebhook = async () => {
+    const res = await fetch('/api/v1/config/global/test', { method: 'POST' });
+    const result = await res.json();
+    alert(result.status === 'success' ? `🟢 ${result.msg}` : `🔴 ${result.msg}`);
+    setTimeout(fetchLogs, 1500); // 过两秒捞取最新的推流报错明细
   };
 
   const addOrUpdateEmail = async () => {
@@ -108,9 +122,12 @@ function App() {
         </div>
         <div className="form-group">
           <label>NAS 全局代理 (给全系统兜底使用，如果不填则直连中国大陆网络)</label>
-          <input value={globalConfig.global_proxy || ''} onChange={e => setGlobalConfig({...globalConfig, global_proxy: e.target.value})} placeholder="例如: socks5://192.168.1.100:10808" />
+          <input value={globalConfig.global_proxy || ''} onChange={e => setGlobalConfig({...globalConfig, global_proxy: e.target.value})} placeholder="例如: socks5://10.0.0.210:7891" />
         </div>
-        <button onClick={saveGlobal}>💾 立即应用全局配置</button>
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <button onClick={saveGlobal}>💾 立即应用全局配置</button>
+          <button style={{ backgroundColor: '#10b981' }} onClick={testGlobalWebhook}>🔗 测试 Webhook</button>
+        </div>
       </section>
 
       <section className="card">
@@ -161,6 +178,27 @@ function App() {
             <button onClick={addOrUpdateEmail}>{editingId ? '💾 保存当前修改' : '➕ 放进后台实时运转序列'}</button>
             {editingId && <button style={{ backgroundColor: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }} onClick={cancelEdit}>取消修改</button>}
           </div>
+        </div>
+      </section>
+
+      {/* 高大上的仿纯黑极客终端日志面板区 */}
+      <section className="card" style={{ backgroundColor: '#000', borderColor: '#333' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2 style={{ color: '#0f0', margin: 0, fontFamily: 'monospace', fontSize: '1.1rem' }}>&gt;_ 全局运行日志 (System Terminal)</h2>
+          <button style={{ backgroundColor: 'transparent', border: '1px solid #334155', padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={fetchLogs}>🔄 刷新缓存</button>
+        </div>
+        <div style={{ maxHeight: '400px', overflowY: 'auto', padding: '1rem', background: '#111', borderRadius: '8px', border: '1px solid #222', fontFamily: '"Courier New", Courier, monospace', fontSize: '0.85rem', lineHeight: 1.6 }}>
+          {logs.length === 0 && <div style={{ color: '#555' }}>[No Logs Found] 系统一切正常犹如处女地...</div>}
+          {logs.map((log) => {
+             const color = log.level === 'ERROR' ? '#ff4081' : (log.level === 'WARNING' ? '#ffc107' : '#2196f3');
+             return (
+               <div key={log.id} style={{ display: 'flex', gap: '12px', borderBottom: '1px solid #1a1a1a', padding: '4px 0' }}>
+                 <span style={{ color: '#6b7280', whiteSpace: 'nowrap' }}>[{log.created_at || '刚才'}]</span>
+                 <span style={{ color, whiteSpace: 'nowrap', fontWeight: 600, width: '60px' }}>{log.level}</span>
+                 <span style={{ color: '#fff' }}><span style={{ color: '#9ca3af', marginRight: '6px' }}>&lt;{log.source}&gt;</span>{log.message}</span>
+               </div>
+             );
+          })}
         </div>
       </section>
     </div>
