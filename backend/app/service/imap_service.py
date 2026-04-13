@@ -118,9 +118,17 @@ def check_single_account(main_loop, email_addr: str, password: str, imap_server:
             
             if code:
                 # 只有找得出验证码才发送（由于我们剥离在独立的背景线程中，所以只能强切回主线程投递 Webhook）
-                subject = get_header(msg_obj, "Subject")
+                sender = get_header(msg_obj, "From")
+                date_header = get_header(msg_obj, "Date")
+                try:
+                    from email.utils import parsedate_to_datetime
+                    dt = parsedate_to_datetime(date_header)
+                    date_str = dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    date_str = date_header
+                    
                 asyncio.run_coroutine_threadsafe(
-                    dispatch_webhook(f"📧邮箱 ({email_addr}) -> {subject}", content, code), 
+                    dispatch_webhook(f"📧邮箱 ({email_addr})", sender, date_str, code), 
                     main_loop
                 )
                 
@@ -197,17 +205,24 @@ def test_imap_connection_and_fetch_latest(main_loop, email_addr, password, imap_
             content = extract_email_text(msg_obj)
             code = extract_code(content)
             if code:
-                date = get_header(msg_obj, "Date")
+                date_header = get_header(msg_obj, "Date")
+                try:
+                    from email.utils import parsedate_to_datetime
+                    dt = parsedate_to_datetime(date_header)
+                    date_str = dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    date_str = date_header
                 subject = get_header(msg_obj, "Subject")
+                sender = get_header(msg_obj, "From")
                 
                 # 新增功能：手工点击测试时，不仅前台弹窗反馈，同时也顺着Webhook把它丢进您的手机推送里核实效果！
                 asyncio.run_coroutine_threadsafe(
-                    dispatch_webhook(f"📧人工连通测试 ({email_addr})", content, code), 
+                    dispatch_webhook(f"📧人工连通探测 ({email_addr})", sender, date_str, code), 
                     main_loop
                 )
                 
                 client.logout()
-                return {"status": "success", "msg": "连通性好极了！并且成功扒出一条历史验证码！并在后台向您手机推流。如有打扰请见谅", "data": {"code": code, "subject": subject, "date": date}}
+                return {"status": "success", "msg": "连通性好极了！并且成功扒出一条历史验证码！并在后台向您手机推流。如有打扰请见谅", "data": {"code": code, "subject": subject, "date": date_str}}
                     
         client.logout()
         return {"status": "success", "msg": "登入测试成功！但在最新的10封邮件里没有提取出符合规则的验证码。"}

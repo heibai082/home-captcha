@@ -4,7 +4,7 @@ from app.model.models import GlobalConfig
 from sqlalchemy import select
 from app.service.log_service import record_log
 
-async def dispatch_webhook(source: str, content: str, code: str):
+async def dispatch_webhook(receiver: str, sender: str, date: str, code: str):
     """
     将分析完的验证码、连同原始文本发送到指定的 Webhook 中
     适用钉钉机器人、企业微信应用机器人等
@@ -24,13 +24,13 @@ async def dispatch_webhook(source: str, content: str, code: str):
         # 1. 兼容：企业微信 / 钉钉机器人
         "msgtype": "text",
         "text": {
-            "content": f"📨【宅家验证码】\n📌接收账户: {source}\n🔑验证码: {code}"
+            "content": f"📨【宅家验证码】\n📥接收账户: {receiver}\n👤发送方: {sender}\n🕒发信时间: {date}\n🔑验证码: {code}"
         },
         # 2. 兼容：您的 notify 自建终端、Bark 等 (直接映射到模板里的 {{.title}} 和 {{.content}})
         "title": f"🔐 验证码: {code}",
-        "content": f"📌接收账户: {source}",
+        "content": f"📥接收账户: {receiver}\n👤发送方: {sender}\n🕒发信时间: {date}",
         # 3. 兼容：ServerChan / PushPlus 等常见推送平台
-        "desp": f"📌接收账户: {source}\n🔑验证码: {code}"
+        "desp": f"📥接收账户: {receiver}\n👤发送方: {sender}\n🕒发信时间: {date}\n🔑验证码: {code}"
     }
     
     # 支持网页配置统一代理，最新版 httpx (0.24+) 已经用 proxy='' 替代了原先的映射表

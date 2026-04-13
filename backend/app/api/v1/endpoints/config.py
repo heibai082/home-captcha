@@ -66,7 +66,7 @@ async def test_global_webhook(db: AsyncSession = Depends(get_db)):
          
     from app.service.dispatcher_service import dispatch_webhook
     # 发送虚拟的模拟验证测试
-    await dispatch_webhook("🛜 系统内网自测", "收到这条说明您的 Webhook 推送轨道无比畅通！\n恭喜入坑 V2.0 版 Home Captcha 😊", "TEST-8888")
+    await dispatch_webhook("🛜 WebUI 连通测试机", "WebUI 测试探针机制", "刚才实时", "TEST-8888")
     return {"status": "success", "msg": "测试虚拟指令已投递完毕，详情请向下翻滚查看系统面板的拦截状况。"}
 
 @router.get("/logs")
