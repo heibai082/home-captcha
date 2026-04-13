@@ -57,6 +57,9 @@ async def poll_emails_background():
                 glob = glob_query.scalar_one_or_none()
                 global_proxy = glob.global_proxy if glob else None
 
+                # 获取给新线程回送用的强引用主循环
+                main_loop = asyncio.get_running_loop()
+
                 # 仅查询启用的邮箱
                 accounts_query = await session.execute(select(EmailAccount).where(EmailAccount.is_active == True))
                 accounts = accounts_query.scalars().all()
@@ -65,14 +68,14 @@ async def poll_emails_background():
                     # 单一账户特定代理优先于全局代理
                     proxy_str = account.proxy_url if account.proxy_url else global_proxy
                     
-                    # 放入多线程执行实际的阻塞式读取任务以不堵塞整个服务器
-                    await asyncio.to_thread(check_single_account, account.email, account.password, account.imap_server, account.imap_port, proxy_str)
+                    # 将主界面的大循环丢进独立的工作线程以防止任何形式的 IO 假死
+                    await asyncio.to_thread(check_single_account, main_loop, account.email, account.password, account.imap_server, account.imap_port, proxy_str)
         except Exception as e:
             record_log("WARNING", "DB 同步", f"后台循环探测引擎读取配置受阻: {e}")
             
         await asyncio.sleep(20)  # 每次轮询休息间隔秒数
 
-def check_single_account(email_addr: str, password: str, imap_server: str, imap_port: int, proxy_str: str):
+def check_single_account(main_loop, email_addr: str, password: str, imap_server: str, imap_port: int, proxy_str: str):
     try:
         proxy_cfg = parse_proxy(proxy_str)
         
@@ -88,6 +91,7 @@ def check_single_account(email_addr: str, password: str, imap_server: str, imap_
         # 搜索 UNSEEN 状态即 "未读" 邮件
         status, response = client.search(None, 'UNSEEN')
         if status != 'OK':
+            client.logout()
             return
             
         unread_msg_nums = response[0].split()
@@ -103,12 +107,14 @@ def check_single_account(email_addr: str, password: str, imap_server: str, imap_
             code = extract_code(content)
             
             if code:
-                # 只有找得出验证码才发送（因为同步上下文中没办法直接 await dispatch_webhook）
+                # 只有找得出验证码才发送（由于我们剥离在独立的背景线程中，所以只能强切回主线程投递 Webhook）
                 subject = get_header(msg_obj, "Subject")
-                loop = asyncio.get_event_loop()
-                loop.create_task(dispatch_webhook(f"📧邮箱 ({email_addr}) -> {subject}", content, code))
+                asyncio.run_coroutine_threadsafe(
+                    dispatch_webhook(f"📧邮箱 ({email_addr}) -> {subject}", content, code), 
+                    main_loop
+                )
                 
-                # 收下这封邮件并标记为已读了，避免重复。你可以在测试期间注掉这行
+                # 收下这封邮件并标记为已读了，避免重复
                 client.store(num, '+FLAGS', '\\Seen')
         
         client.logout()

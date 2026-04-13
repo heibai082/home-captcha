@@ -32,7 +32,7 @@ async def dispatch_webhook(source: str, content: str, code: str):
         
     async with httpx.AsyncClient(proxy=proxy_url) as client:
         try:
-            response = await client.post(target_url, json=payload, timeout=10.0)
+            response = await client.post(target_url, json=payload, timeout=20.0)
             record_log("INFO", "外发触达", f"🚀 验证码已成功推送至您配置终端！服务器回传: {response.status_code}")
         except Exception as e:
-            record_log("ERROR", "推流爆破", f"尝试推送时网络链路崩塌: {e}")
+            record_log("ERROR", "推流爆破", f"尝试进行 HTTP 投递时崩溃: {repr(e)}")
