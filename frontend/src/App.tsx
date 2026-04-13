@@ -6,6 +6,7 @@ function App() {
   const [newEmail, setNewEmail] = useState({ email: '', password: '', imap_server: '', imap_port: 993, proxy_url: '' });
   const [editingId, setEditingId] = useState<number | null>(null);
   const [logs, setLogs] = useState<any[]>([]);
+  const [isTestingGlobal, setIsTestingGlobal] = useState(false);
 
   useEffect(() => {
     fetchGlobal();
@@ -38,10 +39,17 @@ function App() {
   };
 
   const testGlobalWebhook = async () => {
-    const res = await fetch('/api/v1/config/global/test', { method: 'POST' });
-    const result = await res.json();
-    alert(result.status === 'success' ? `🟢 ${result.msg}` : `🔴 ${result.msg}`);
-    setTimeout(fetchLogs, 1500); // 过两秒捞取最新的推流报错明细
+    setIsTestingGlobal(true);
+    try {
+      const res = await fetch('/api/v1/config/global/test', { method: 'POST' });
+      const result = await res.json();
+      alert(result.status === 'success' ? `🟢 ${result.msg}` : `🔴 ${result.msg}`);
+    } catch(e) {
+      alert(`🔴 Webhook 测试失败或超时，请检查控制台网络报错: ${e}`);
+    } finally {
+      setIsTestingGlobal(false);
+      setTimeout(fetchLogs, 1000); // 捞取最新的推流报错明细
+    }
   };
 
   const addOrUpdateEmail = async () => {
@@ -126,7 +134,9 @@ function App() {
         </div>
         <div style={{ display: 'flex', gap: '1rem' }}>
           <button onClick={saveGlobal}>💾 立即应用全局配置</button>
-          <button style={{ backgroundColor: '#10b981' }} onClick={testGlobalWebhook}>🔗 测试 Webhook</button>
+          <button style={{ backgroundColor: isTestingGlobal ? '#9ca3af' : '#10b981' }} onClick={testGlobalWebhook} disabled={isTestingGlobal}>
+            {isTestingGlobal ? '⏳ 强力抛出测速探针中... 等待返回...' : '🔗 测试 Webhook'}
+          </button>
         </div>
       </section>
 

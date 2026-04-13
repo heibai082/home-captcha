@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.model.models import GlobalConfig, EmailAccount, SystemLog
 import asyncio
 from app.service.imap_service import test_imap_connection_and_fetch_latest
+from app.service.log_service import record_log
 
 router = APIRouter()
 
@@ -49,21 +50,24 @@ async def update_global_config(data: WebhookUpdate, db: AsyncSession = Depends(g
     glob.webhook_url = data.target_url
     glob.global_proxy = data.global_proxy
     await db.commit()
+    record_log("INFO", "审计 / 用户操作", "管理员变更了全局分发网络配置！(包括代理或推送终点)")
     return {"status": "success", "msg": "基础配置已成功应用!"}
 
 @router.post("/global/test")
 async def test_global_webhook(db: AsyncSession = Depends(get_db)):
     """点击前端全局测试按钮时，扔条假数据去触发日志"""
+    record_log("INFO", "审计 / 用户操作", "管理员在 UI 面板上按下了「测试 Webhook」探针按钮")
     glob_query = await db.execute(select(GlobalConfig).where(GlobalConfig.id == 1))
     glob = glob_query.scalar_one_or_none()
     
     if not glob or not glob.webhook_url:
-        return {"status": "error", "msg": "老哥，您连推流神址都没填就点测试啦？"}
+        record_log("ERROR", "推流爆破", "指令被拦截取消：由于您根本还没在框里填发往的 URL")
+        return {"status": "error", "msg": "推流神址都没填，怎么发车？"}
          
     from app.service.dispatcher_service import dispatch_webhook
     # 发送虚拟的模拟验证测试
     await dispatch_webhook("🛜 系统内网自测", "收到这条说明您的 Webhook 推送轨道无比畅通！\n恭喜入坑 V2.0 版 Home Captcha 😊", "TEST-8888")
-    return {"status": "success", "msg": "一发入魂！虚拟探针已经发往 Webhook，如果不通请立刻查看下方的系统黑屏日志！"}
+    return {"status": "success", "msg": "测试虚拟指令已投递完毕，详情请向下翻滚查看系统面板的拦截状况。"}
 
 @router.get("/logs")
 async def get_system_logs(db: AsyncSession = Depends(get_db)):
@@ -86,6 +90,7 @@ async def add_email(acc: EmailAccountCreate, db: AsyncSession = Depends(get_db))
     new_acc = EmailAccount(**acc.model_dump())
     db.add(new_acc)
     await db.commit()
+    record_log("INFO", "审计 / 用户操作", f"管理员在右下方成功新建提交了受监控邮箱网络实体: {acc.email}")
     return {"status": "success", "msg": f"邮箱 {acc.email} 已加入监控队列。"}
 
 @router.delete("/emails/{email_id}")
@@ -93,6 +98,7 @@ async def delete_email(email_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(EmailAccount).where(EmailAccount.id == email_id))
     acc = result.scalar_one_or_none()
     if acc:
+        record_log("WARNING", "审计 / 用户操作", f"管理员点下了大红按钮，挥泪删除了已存在邮箱任务: {acc.email}")
         await db.delete(acc)
         await db.commit()
     return {"status": "deleted"}
@@ -103,6 +109,7 @@ async def update_email(email_id: int, acc_update: EmailAccountCreate, db: AsyncS
     result = await db.execute(select(EmailAccount).where(EmailAccount.id == email_id))
     db_acc = result.scalar_one_or_none()
     if db_acc:
+        record_log("INFO", "审计 / 用户操作", f"管理员通过蓝色编辑按钮覆写并变幻了 {db_acc.email} 的网络底层参数")
         db_acc.email = acc_update.email
         db_acc.password = acc_update.password
         db_acc.imap_server = acc_update.imap_server
@@ -118,6 +125,8 @@ async def test_email_connection(email_id: int, db: AsyncSession = Depends(get_db
     acc = result.scalar_one_or_none()
     if not acc:
         return {"status": "error", "msg": "找不到该账号配置。"}
+        
+    record_log("INFO", "审计 / 用户操作", f"管理员在操控台发出了对 {acc.email} 收敛验证码连通度的绿色探测探针")
         
     # 获取全局代理用于 fallback
     glob_query = await db.execute(select(GlobalConfig).where(GlobalConfig.id == 1))
@@ -135,4 +144,10 @@ async def test_email_connection(email_id: int, db: AsyncSession = Depends(get_db
         acc.imap_port, 
         proxy_str
     )
+    
+    if res.get("status") == "success":
+        record_log("INFO", "收信链路", f"连通探测成功: {res.get('msg')}。抓取命中数据态: {'是' if res.get('data') else '否'}")
+    else:
+        record_log("ERROR", "收信链路", f"连通探测网络全面炸裂超时被拦截: {res.get('msg')}")
+        
     return res
