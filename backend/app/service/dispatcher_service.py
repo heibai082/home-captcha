@@ -19,12 +19,18 @@ async def dispatch_webhook(source: str, content: str, code: str):
     
     target_url = glob.webhook_url
         
-    # 企业微信和钉钉的通用 json 数据格式
+    # 采用“胖载荷 (Fat Payload)”策略，用一份 JSON 兼容天下常见接收器
     payload = {
+        # 1. 兼容：企业微信 / 钉钉机器人
         "msgtype": "text",
         "text": {
             "content": f"📨【宅家验证码】\n\n📌来源: {source}\n🔑验证码: {code}\n\n📝原文: {content}"
-        }
+        },
+        # 2. 兼容：您的 notify 自建终端、Bark 等 (直接映射到模板里的 {{.title}} 和 {{.content}})
+        "title": f"🔐 验证码: {code}",
+        "content": f"📌接收来源: {source}\n\n📝原文内容: {content}",
+        # 3. 兼容：ServerChan / PushPlus 等常见推送平台
+        "desp": f"📌来源: {source}\n🔑验证码: {code}\n\n📝原文: {content}"
     }
     
     # 支持网页配置统一代理，最新版 httpx (0.24+) 已经用 proxy='' 替代了原先的映射表
