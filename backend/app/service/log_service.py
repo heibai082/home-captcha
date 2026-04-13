@@ -7,8 +7,9 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("home_captcha")
 
-# NOTE: 获取与主应用同一个真实的数据库目录
-DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../data/app.db"))
+# NOTE: 获取与主应用同一个真实的数据库目录。
+# 修正路径计算：__file__ 在 /app/app/service 下，向上两层即为 /app/app，再拼 ../data 则为 /app/data/app.db 刚好落在持久化卷里！
+DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/app.db"))
 
 def record_log(level: str, source: str, message: str):
     """

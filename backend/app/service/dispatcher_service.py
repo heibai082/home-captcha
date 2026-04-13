@@ -27,14 +27,10 @@ async def dispatch_webhook(source: str, content: str, code: str):
         }
     }
     
-    # 支持网页配置统一代理，以防您的 NAS 因地区问题无法访问特定 Webhook
-    proxies = None
-    if glob.global_proxy:
-        proxies = {
-            "all://": glob.global_proxy
-        }
+    # 支持网页配置统一代理，最新版 httpx (0.24+) 已经用 proxy='' 替代了原先的映射表
+    proxy_url = glob.global_proxy if glob.global_proxy else None
         
-    async with httpx.AsyncClient(proxies=proxies) as client:
+    async with httpx.AsyncClient(proxy=proxy_url) as client:
         try:
             response = await client.post(target_url, json=payload, timeout=10.0)
             record_log("INFO", "外发触达", f"🚀 验证码已成功推送至您配置终端！服务器回传: {response.status_code}")
