@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  home-captcha:
+    # 直接拉取线上的镜像，请将里面的 your_docker_id 替换为您真实在 Docker Hub 上注册的用户名！
+    image: your_docker_id/home-captcha:latest
+    container_name: home-captcha
+    restart: unless-stopped
+    ports:
+      - "8080:8000"  # NAS 宿主机端口 : 容器端口
+    volumes:
+      - ./config.yaml:/app/config.yaml  # 运行时挂载读取配置
+    environment:
+      - TZ=Asia/Shanghai  # 北京时间

@@ -1,0 +1,27 @@
+# 宅家验证码 服务配置样例
+# 请复制此文件为 config.yaml，并填写真实信息
+
+webhook:
+  # 用于接收提取好验证码信息的目标 Webhook，比如钉钉、企业微信机器人、Bark等
+  target_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY"
+
+# 全局代理设置 (可选，对所有网络请求生效，留空则不使用)
+proxy:
+  # url: "socks5://192.168.x.x:10808"   # 或 http://192.168.x.x:7890
+  url: ""
+
+# 监听的邮箱列表
+emails:
+  - email: "your.email@gmail.com"
+    password: "your_app_password"  # 推荐使用应用专用密码，不要填原密码
+    imap_server: "imap.gmail.com"
+    imap_port: 993
+    # 针对当前单个邮箱独立设置的代理。如果填写，将覆盖上面的全局代理。
+    # 对于绿联 NAS 上的谷歌邮箱，您可以单独填写对应的代理地址
+    proxy_url: "http://192.168.1.100:7890"  
+
+  - email: "another.email@126.com"
+    password: "your_app_password"
+    imap_server: "imap.126.com"
+    imap_port: 993
+    proxy_url: ""
