@@ -25,8 +25,8 @@ class SystemLog(Base):
     """全局操作与故障拦截审计归档表"""
     __tablename__ = "system_logs"
     
-    id = Column(Integer, primary_key=True, index=True)
-    level = Column(String)  # INFO, WARNING, ERROR
-    source = Column(String)  # 来源模块: API, IMAP, WEBHOOK
-    message = Column(String) # 具体明细
-    created_at = Column(String) # 注入格式化的发生时间
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
