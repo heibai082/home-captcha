@@ -75,6 +75,41 @@ async def poll_emails_background():
             
         await asyncio.sleep(20)  # 每次轮询休息间隔秒数
 
+def get_folders_to_scan(client):
+    """自动通过协议分析获取所有的潜在垃圾箱，外加一些最常见的兜底名称"""
+    folders_to_scan = ['INBOX']
+    try:
+        status, folders = client.list()
+        if status == 'OK':
+            for f_info in folders:
+                if not f_info: continue
+                f_str = f_info.decode('ascii', errors='ignore')
+                f_upper = f_str.upper()
+                
+                # 如果邮件服务商明确在头文件标记了这是垃圾箱
+                if '\\JUNK' in f_upper or '\\SPAM' in f_upper:
+                    import re
+                    match = re.search(r'\"([^\"]+)\"$', f_str)
+                    if match:
+                        f_name = match.group(1)
+                        if f_name not in folders_to_scan:
+                            folders_to_scan.append(f_name)
+                    else:
+                        parts = f_str.split()
+                        if parts:
+                            f_name = parts[-1]
+                            if f_name not in folders_to_scan:
+                                folders_to_scan.append(f_name)
+    except Exception:
+        pass
+    
+    # 我们再手动压入几个硬编码的欧美区和国内常见的英文兜底名词
+    for fallback in ['Junk', 'Spam', '[Gmail]/Spam', 'Junk Email']:
+        if fallback not in folders_to_scan:
+            folders_to_scan.append(fallback)
+            
+    return folders_to_scan
+
 def check_single_account(main_loop, email_addr: str, password: str, imap_server: str, imap_port: int, proxy_str: str):
     try:
         proxy_cfg = parse_proxy(proxy_str)
@@ -86,54 +121,58 @@ def check_single_account(main_loop, email_addr: str, password: str, imap_server:
             client = imaplib.IMAP4_SSL(imap_server, imap_port)
             
         client.login(email_addr, password)
-        client.select('INBOX')
+        target_folders = get_folders_to_scan(client)
         
-        # 搜索 UNSEEN 状态即 "未读" 邮件
-        status, response = client.search(None, 'UNSEEN')
-        if status != 'OK':
-            client.logout()
-            return
+        for folder_name in target_folders:
+            safe_folder = folder_name
+            if ' ' in safe_folder and not safe_folder.startswith('"'):
+                safe_folder = f'"{safe_folder}"'
+                
+            status, response = client.select(safe_folder)
+            if status != 'OK':
+                continue
             
-        unread_msg_nums = response[0].split()
-        
-        # 【防轰炸机制】限制单次推送最多提取最后 2 条最新邮件
-        # 如果邮箱里积压了十几条历史未读，一下全发过去会被拉黑轰炸
-        if len(unread_msg_nums) > 2:
-            # 把过时的积压老邮件全批量强行静默标记为已读
-            for num in unread_msg_nums[:-2]:
-                client.store(num, '+FLAGS', '\\Seen')
-            # 仅保留最新的两条用来进队列提取验证码
-            unread_msg_nums = unread_msg_nums[-2:]
-            
-        for num in unread_msg_nums:
-            res, data = client.fetch(num, '(RFC822)')
-            if res != 'OK':
+            # 搜索 UNSEEN 状态即 "未读" 邮件
+            status, response = client.search(None, 'UNSEEN')
+            if status != 'OK':
                 continue
                 
-            raw_email = data[0][1]
-            msg_obj = email.message_from_bytes(raw_email)
+            unread_msg_nums = response[0].split()
             
-            content = extract_email_text(msg_obj)
-            code = extract_code(content)
-            
-            if code:
-                # 只有找得出验证码才发送（由于我们剥离在独立的背景线程中，所以只能强切回主线程投递 Webhook）
-                sender = get_header(msg_obj, "From")
-                date_header = get_header(msg_obj, "Date")
-                try:
-                    from email.utils import parsedate_to_datetime
-                    dt = parsedate_to_datetime(date_header)
-                    date_str = dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
-                except:
-                    date_str = date_header
-                    
-                asyncio.run_coroutine_threadsafe(
-                    dispatch_webhook(f"📧邮箱 ({email_addr})", sender, date_str, code), 
-                    main_loop
-                )
+            # 【防轰炸机制】限制单次推送最多提取最后 2 条最新邮件
+            if len(unread_msg_nums) > 2:
+                for num in unread_msg_nums[:-2]:
+                    client.store(num, '+FLAGS', '\\Seen')
+                unread_msg_nums = unread_msg_nums[-2:]
                 
-                # 收下这封邮件并标记为已读了，避免重复
-                client.store(num, '+FLAGS', '\\Seen')
+            for num in unread_msg_nums:
+                res, data = client.fetch(num, '(RFC822)')
+                if res != 'OK':
+                    continue
+                    
+                raw_email = data[0][1]
+                msg_obj = email.message_from_bytes(raw_email)
+                
+                content = extract_email_text(msg_obj)
+                code = extract_code(content)
+                
+                if code:
+                    sender = get_header(msg_obj, "From")
+                    date_header = get_header(msg_obj, "Date")
+                    try:
+                        from email.utils import parsedate_to_datetime
+                        dt = parsedate_to_datetime(date_header)
+                        date_str = dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+                    except:
+                        date_str = date_header
+                        
+                    asyncio.run_coroutine_threadsafe(
+                        dispatch_webhook(f"📧邮箱 ({email_addr})", sender, date_str, code), 
+                        main_loop
+                    )
+                    
+                    # 收下这封邮件并标记为已读了，避免重复
+                    client.store(num, '+FLAGS', '\\Seen')
         
         client.logout()
     except Exception as e:
@@ -184,48 +223,74 @@ def test_imap_connection_and_fetch_latest(main_loop, email_addr, password, imap_
             client = imaplib.IMAP4_SSL(imap_server, imap_port)
             
         client.login(email_addr, password)
-        client.select('INBOX')
+        target_folders = get_folders_to_scan(client)
         
-        # 只取全部邮件最新5封验证测试
-        status, response = client.search(None, 'ALL')
-        if status != 'OK':
-            client.logout()
-            return {"status": "success", "msg": "连接成功，但您邮箱里没有任何邮件。"}
+        all_found = []
+        for folder_name in target_folders:
+            safe_folder = folder_name
+            if ' ' in safe_folder and not safe_folder.startswith('"'):
+                safe_folder = f'"{safe_folder}"'
+                
+            status, response = client.select(safe_folder)
+            if status != 'OK':
+                continue
+                
+            status, response = client.search(None, 'ALL')
+            if status != 'OK':
+                continue
+                
+            msg_nums = response[0].split()
+            # 从这个文件夹取倒数 10 封最新邮件进行扫描
+            recent_nums = reversed(msg_nums[-10:])
             
-        msg_nums = response[0].split()
-        # 取倒数 10 封最新邮件进行扫描，减轻负担
-        recent_nums = reversed(msg_nums[-10:])
+            for num in recent_nums:
+                res, data = client.fetch(num, '(RFC822)')
+                if res != 'OK': continue
+                    
+                raw_email = data[0][1]
+                msg_obj = email.message_from_bytes(raw_email)
+                content = extract_email_text(msg_obj)
+                code = extract_code(content)
+                if code:
+                    date_header = get_header(msg_obj, "Date")
+                    try:
+                        from email.utils import parsedate_to_datetime
+                        dt = parsedate_to_datetime(date_header)
+                        ts = dt.timestamp()
+                        date_str = dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+                    except:
+                        ts = 0
+                        date_str = date_header
+                        
+                    subject = get_header(msg_obj, "Subject")
+                    sender = get_header(msg_obj, "From")
+                    
+                    all_found.append({
+                        "code": code,
+                        "date_str": date_str,
+                        "subject": subject,
+                        "sender": sender,
+                        "ts": ts,
+                        "folder": folder_name
+                    })
+                    # 我们只需要每个文件夹往回找到第一个匹配的就好，因为找多了太耗时
+                    break
         
-        for num in recent_nums:
-            res, data = client.fetch(num, '(RFC822)')
-            if res != 'OK': continue
-                
-            raw_email = data[0][1]
-            msg_obj = email.message_from_bytes(raw_email)
-            content = extract_email_text(msg_obj)
-            code = extract_code(content)
-            if code:
-                date_header = get_header(msg_obj, "Date")
-                try:
-                    from email.utils import parsedate_to_datetime
-                    dt = parsedate_to_datetime(date_header)
-                    date_str = dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
-                except:
-                    date_str = date_header
-                subject = get_header(msg_obj, "Subject")
-                sender = get_header(msg_obj, "From")
-                
-                # 新增功能：手工点击测试时，不仅前台弹窗反馈，同时也顺着Webhook把它丢进您的手机推送里核实效果！
-                asyncio.run_coroutine_threadsafe(
-                    dispatch_webhook(f"📧人工连通探测 ({email_addr})", sender, date_str, code), 
-                    main_loop
-                )
-                
-                client.logout()
-                return {"status": "success", "msg": "连通性好极了！并且成功扒出一条历史验证码！并在后台向您手机推流。如有打扰请见谅", "data": {"code": code, "subject": subject, "date": date_str}}
+        if all_found:
+            # 排序比对所有大文件夹，只取时间戳最大（最新）的那一个！
+            all_found.sort(key=lambda x: x["ts"])
+            latest = all_found[-1]
+            
+            asyncio.run_coroutine_threadsafe(
+                dispatch_webhook(f"📧人工连通探测 ({email_addr})", latest["sender"], latest["date_str"], latest["code"]), 
+                main_loop
+            )
+            
+            client.logout()
+            return {"status": "success", "msg": f"打通全部垃圾与收件箱！成功命中最新的历史验证码！并在后台向您手机推流。", "data": {"code": latest["code"], "subject": latest["subject"], "date": latest["date_str"]}}
                     
         client.logout()
-        return {"status": "success", "msg": "登入测试成功！但在最新的10封邮件里没有提取出符合规则的验证码。"}
+        return {"status": "success", "msg": "登入测试成功！但在垃圾箱和收件箱最近10封里均没有验证码。"}
         
     except Exception as e:
         return {"status": "error", "msg": f"连接或提取失败，请检查账号密码、授权码或代理状态哦: {str(e)}"}
