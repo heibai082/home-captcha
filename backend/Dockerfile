@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com
 
 # 拷贝代码目录
 COPY ./app ./app
+COPY ./static ./static
 
 # 对外暴露运行端口
 EXPOSE 8000
