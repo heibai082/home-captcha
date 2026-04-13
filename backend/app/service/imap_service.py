@@ -124,11 +124,7 @@ def check_single_account(main_loop, email_addr: str, password: str, imap_server:
         target_folders = get_folders_to_scan(client)
         
         for folder_name in target_folders:
-            safe_folder = folder_name
-            if ' ' in safe_folder and not safe_folder.startswith('"'):
-                safe_folder = f'"{safe_folder}"'
-                
-            status, response = client.select(safe_folder)
+            status, response = client.select(folder_name)
             if status != 'OK':
                 continue
             
@@ -227,11 +223,7 @@ def test_imap_connection_and_fetch_latest(main_loop, email_addr, password, imap_
         
         all_found = []
         for folder_name in target_folders:
-            safe_folder = folder_name
-            if ' ' in safe_folder and not safe_folder.startswith('"'):
-                safe_folder = f'"{safe_folder}"'
-                
-            status, response = client.select(safe_folder)
+            status, response = client.select(folder_name)
             if status != 'OK':
                 continue
                 
