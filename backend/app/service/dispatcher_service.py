@@ -1,15 +1,25 @@
 import httpx
-from app.core.config import settings
+from app.db.session import AsyncSessionLocal
+from app.model.models import GlobalConfig
+from sqlalchemy import select
 
+async def dispatch_webhook(source: str, content: str, code: str):
+    """
+    将分析完的验证码、连同原始文本发送到指定的 Webhook 中
 async def dispatch_webhook(source: str, content: str, code: str):
     """
     将分析完的验证码、连同原始文本发送到指定的 Webhook 中
     适用钉钉机器人、企业微信应用机器人等
     """
-    target_url = settings.webhook.target_url
-    if not target_url:
-        print("未配置目标 Webhook URL，停止发送。")
+    async with AsyncSessionLocal() as session:
+        glob_query = await session.execute(select(GlobalConfig).where(GlobalConfig.id == 1))
+        glob = glob_query.scalar_one_or_none()
+        
+    if not glob or not glob.webhook_url:
+        print("未在系统中配置目标 Webhook URL，系统抓取到验证码但不予转发。")
         return
+    
+    target_url = glob.webhook_url
         
     # 企业微信和钉钉的通用 json 数据格式
     payload = {
@@ -19,11 +29,11 @@ async def dispatch_webhook(source: str, content: str, code: str):
         }
     }
     
-    # 支持配置统一代理，以防您的 NAS 因地区问题无法访问特定 Webhook
+    # 支持网页配置统一代理，以防您的 NAS 因地区问题无法访问特定 Webhook
     proxies = None
-    if settings.proxy and settings.proxy.url:
+    if glob.global_proxy:
         proxies = {
-            "all://": settings.proxy.url
+            "all://": glob.global_proxy
         }
         
     async with httpx.AsyncClient(proxies=proxies) as client:

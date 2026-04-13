@@ -13,6 +13,17 @@ jobs:
       - name: Check out the repo
         uses: actions/checkout@v3
 
+      - name: Setup Node.js 环境以编译 React 前端
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      
+      - name: 打包可视化控制中心 (Build Frontend)
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
       - name: Log in to Docker Hub
         # 官方推荐的登陆 Action
         uses: docker/login-action@v2

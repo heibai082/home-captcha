@@ -4,9 +4,11 @@ import email
 from email.header import decode_header
 import socks
 import ssl
-from app.core.config import settings
 from app.service.extractor_service import extract_code
 from app.service.dispatcher_service import dispatch_webhook
+from app.db.session import AsyncSessionLocal
+from app.model.models import EmailAccount, GlobalConfig
+from sqlalchemy import select
 
 # 重写标准库原生的 IMAP4_SSL ，使其内部创建的 socket 连接走独立代理，而不污染全局
 class ProxyIMAP4SSL(imaplib.IMAP4_SSL):
@@ -47,25 +49,39 @@ async def poll_emails_background():
     """在后台不间断运转的任务：轮询检查配置的所有邮箱有没有新邮件"""
     print("📧 后台邮箱监听服务已启动...")
     while True:
-        for account in settings.emails:
-            # 使用针对单一账户的单独代理，否则尝试使用全局代理
-            proxy_str = account.proxy_url if account.proxy_url else (settings.proxy.url if settings.proxy else None)
-            # 因为 IMAP 连接是阻塞式的（非异步），交给事件循环的安全线程执行
-            await asyncio.to_thread(check_single_account, account, proxy_str)
+        try:
+            # 每次循环都开启一个独立且短暂的查询以确保读取的是网页上的最新配置
+            async with AsyncSessionLocal() as session:
+                glob_query = await session.execute(select(GlobalConfig).where(GlobalConfig.id == 1))
+                glob = glob_query.scalar_one_or_none()
+                global_proxy = glob.global_proxy if glob else None
+
+                # 仅查询启用的邮箱
+                accounts_query = await session.execute(select(EmailAccount).where(EmailAccount.is_active == True))
+                accounts = accounts_query.scalars().all()
+
+                for account in accounts:
+                    # 单一账户特定代理优先于全局代理
+                    proxy_str = account.proxy_url if account.proxy_url else global_proxy
+                    
+                    # 放入多线程执行实际的阻塞式读取任务以不堵塞整个服务器
+                    await asyncio.to_thread(check_single_account, account.email, account.password, account.imap_server, account.imap_port, proxy_str)
+        except Exception as e:
+            print(f"后台循环拉取配置遇到问题可能数据库还未写盘: {e}")
             
         await asyncio.sleep(20)  # 每次轮询休息间隔秒数
 
-def check_single_account(account, proxy_str: str):
+def check_single_account(email_addr: str, password: str, imap_server: str, imap_port: int, proxy_str: str):
     try:
         proxy_cfg = parse_proxy(proxy_str)
         
         # 判断如果存在代理则运用带代理的 IMAP 客户端
         if proxy_cfg:
-            client = ProxyIMAP4SSL(account.imap_server, account.imap_port, proxy_cfg[0], proxy_cfg[1], proxy_cfg[2])
+            client = ProxyIMAP4SSL(imap_server, imap_port, proxy_cfg[0], proxy_cfg[1], proxy_cfg[2])
         else:
-            client = imaplib.IMAP4_SSL(account.imap_server, account.imap_port)
+            client = imaplib.IMAP4_SSL(imap_server, imap_port)
             
-        client.login(account.email, account.password)
+        client.login(email_addr, password)
         client.select('INBOX')
         
         # 搜索 UNSEEN 状态即 "未读" 邮件
@@ -86,17 +102,17 @@ def check_single_account(account, proxy_str: str):
             code = extract_code(content)
             
             if code:
-                # 只有找得出验证码才发送（因为同步上下文中没办法直接 await dispatch_webhook，这里使用事件循环抛出）
+                # 只有找得出验证码才发送（因为同步上下文中没办法直接 await dispatch_webhook）
                 subject = get_header(msg_obj, "Subject")
                 loop = asyncio.get_event_loop()
-                loop.create_task(dispatch_webhook(f"📧邮箱 ({account.email}) -> {subject}", content, code))
+                loop.create_task(dispatch_webhook(f"📧邮箱 ({email_addr}) -> {subject}", content, code))
                 
                 # 收下这封邮件并标记为已读了，避免重复。你可以在测试期间注掉这行
                 client.store(num, '+FLAGS', '\\Seen')
         
         client.logout()
     except Exception as e:
-        print(f"[{account.email}] IMAP 巡检出错或超时（如果在群晖/NAS 连谷歌超时请检查您的代理）: {e}")
+        print(f"[{email_addr}] IMAP 巡检出错或超时（如果在群晖/NAS 连谷歌超时请检查您的代理）: {e}")
 
 def extract_email_text(msg) -> str:
     """提取纯文本或将 HTML 里的文字抽出来"""
