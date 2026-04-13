@@ -148,3 +148,54 @@ def get_header(msg, header_name):
         else:
              text_content += string_byte
     return text_content
+
+def test_imap_connection_and_fetch_latest(email_addr: str, password: str, imap_server: str, imap_port: int, proxy_str: str):
+    """
+    用于前台手动测试特定邮箱的连通性并尝试找出最近的一条验证码邮件
+    """
+    try:
+        proxy_cfg = parse_proxy(proxy_str)
+        if proxy_cfg:
+            client = ProxyIMAP4SSL(imap_server, imap_port, proxy_cfg[0], proxy_cfg[1], proxy_cfg[2])
+        else:
+            client = imaplib.IMAP4_SSL(imap_server, imap_port)
+            
+        client.login(email_addr, password)
+        client.select('INBOX')
+        
+        # 获取所有的邮件ID，不用限定未读的
+        status, response = client.search(None, 'ALL')
+        if status != 'OK':
+            client.logout()
+            return {"status": "success", "msg": "连接成功，但您邮箱里没有任何邮件。"}
+            
+        msg_nums = response[0].split()
+        # 取倒数 10 封最新邮件进行扫描，减轻负担
+        recent_nums = reversed(msg_nums[-10:])
+        
+        for num in recent_nums:
+            res, data = client.fetch(num, '(RFC822)')
+            if res != 'OK': continue
+                
+            raw_email = data[0][1]
+            msg_obj = email.message_from_bytes(raw_email)
+            
+            content = extract_email_text(msg_obj)
+            code = extract_code(content)
+            
+            if code:
+                # 找到带有验证码的最近一封
+                date_str = get_header(msg_obj, "Date")
+                subject = get_header(msg_obj, "Subject")
+                client.logout()
+                return {
+                    "status": "success", 
+                    "msg": "网络连通测试完美成功！且成功命中历史验证码。", 
+                    "data": {"code": code, "date": date_str, "subject": subject}
+                }
+        
+        client.logout()
+        return {"status": "success", "msg": "登入测试成功！但在最新的10封邮件里没有提取出符合规则的验证码。"}
+        
+    except Exception as e:
+        return {"status": "error", "msg": f"连接或提取失败，请检查账号密码、授权码或代理状态哦: {str(e)}"}

@@ -13,8 +13,9 @@ COPY requirements.txt .
 # 使用国内阿里云镜像源加速构建
 RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
-# 拷贝代码目录
+# 拷贝代码主程序目录
 COPY ./app ./app
+# 把 GitHub 上面编译好的漂亮的 React 前端页面目录拷进内部提供挂载
 COPY ./static ./static
 
 # 对外暴露运行端口

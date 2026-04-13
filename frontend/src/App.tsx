@@ -49,6 +49,26 @@ function App() {
     }
   };
 
+  const testEmail = async (id: number) => {
+    // 简易的弹窗让用户感知加载
+    window.alert('⏳ 正在跨接网络请求并尝试搜索最近收件箱中的验证码，这可能需要十秒钟左右，点击确定后请稍等不要刷新...');
+    try {
+      const res = await fetch(`/api/v1/config/emails/${id}/test`);
+      const result = await res.json();
+      if(result.status === 'success') {
+          if(result.data) {
+              window.alert(`✅ ${result.msg}\n\n🕵️ 侦测到历史验证码:\n【时间】: ${result.data.date}\n【验证码】: ${result.data.code}\n【邮件标题】: ${result.data.subject}`);
+          } else {
+              window.alert(`✅ ${result.msg}`);
+          }
+      } else {
+          window.alert(`❌ 测试失败: ${result.msg}`);
+      }
+    } catch(e) {
+      window.alert(`💔 测试请求发生网络异常或后端无响应!`);
+    }
+  };
+
   return (
     <div className="container">
       <header style={{ marginBottom: '3rem', textAlign: 'center', marginTop: '2rem' }}>
@@ -80,7 +100,10 @@ function App() {
                 {acc.proxy_url ? <span style={{color: 'var(--primary)', marginLeft: 8}}>🚀专属代理生效中: {acc.proxy_url}</span> : <span style={{marginLeft: 8}}>🟢未挂专属直连中</span>}
               </div>
             </div>
-            <button className="danger" onClick={() => delEmail(acc.id)}>删除</button>
+            <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+              <button style={{backgroundColor: '#10b981', padding: '0.5rem 1rem'}} onClick={() => testEmail(acc.id)}>📶 连通测试</button>
+              <button className="danger" onClick={() => delEmail(acc.id)}>删除</button>
+            </div>
           </div>
         ))}
         {emails.length === 0 && <div style={{ color: 'var(--text-dim)', marginBottom: '1rem', padding: '1rem', background: 'var(--bg)', borderRadius: '8px' }}>🚀您目前没有关联任何邮箱。填在下方的即刻便能收信！</div>}

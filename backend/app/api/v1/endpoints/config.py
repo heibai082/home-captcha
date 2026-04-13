@@ -6,6 +6,8 @@ from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.model.models import GlobalConfig, EmailAccount
+import asyncio
+from app.service.imap_service import test_imap_connection_and_fetch_latest
 
 router = APIRouter()
 
@@ -72,3 +74,29 @@ async def delete_email(email_id: int, db: AsyncSession = Depends(get_db)):
         await db.delete(acc)
         await db.commit()
     return {"status": "deleted"}
+
+@router.get("/emails/{email_id}/test")
+async def test_email_connection(email_id: int, db: AsyncSession = Depends(get_db)):
+    """测试邮箱连接并抓取最新的验证码邮件"""
+    result = await db.execute(select(EmailAccount).where(EmailAccount.id == email_id))
+    acc = result.scalar_one_or_none()
+    if not acc:
+        return {"status": "error", "msg": "找不到该账号配置。"}
+        
+    # 获取全局代理用于 fallback
+    glob_query = await db.execute(select(GlobalConfig).where(GlobalConfig.id == 1))
+    glob = glob_query.scalar_one_or_none()
+    global_proxy = glob.global_proxy if glob else None
+    
+    proxy_str = acc.proxy_url if acc.proxy_url else global_proxy
+    
+    # 把网络探测由于是阻塞式的丢进线程里执行
+    res = await asyncio.to_thread(
+        test_imap_connection_and_fetch_latest,
+        acc.email, 
+        acc.password, 
+        acc.imap_server, 
+        acc.imap_port, 
+        proxy_str
+    )
+    return res
