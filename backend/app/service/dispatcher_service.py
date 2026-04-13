@@ -6,9 +6,6 @@ from sqlalchemy import select
 async def dispatch_webhook(source: str, content: str, code: str):
     """
     将分析完的验证码、连同原始文本发送到指定的 Webhook 中
-async def dispatch_webhook(source: str, content: str, code: str):
-    """
-    将分析完的验证码、连同原始文本发送到指定的 Webhook 中
     适用钉钉机器人、企业微信应用机器人等
     """
     async with AsyncSessionLocal() as session:
