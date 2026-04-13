@@ -95,6 +95,16 @@ def check_single_account(main_loop, email_addr: str, password: str, imap_server:
             return
             
         unread_msg_nums = response[0].split()
+        
+        # 【防轰炸机制】限制单次推送最多提取最后 2 条最新邮件
+        # 如果邮箱里积压了十几条历史未读，一下全发过去会被拉黑轰炸
+        if len(unread_msg_nums) > 2:
+            # 把过时的积压老邮件全批量强行静默标记为已读
+            for num in unread_msg_nums[:-2]:
+                client.store(num, '+FLAGS', '\\Seen')
+            # 仅保留最新的两条用来进队列提取验证码
+            unread_msg_nums = unread_msg_nums[-2:]
+            
         for num in unread_msg_nums:
             res, data = client.fetch(num, '(RFC822)')
             if res != 'OK':
