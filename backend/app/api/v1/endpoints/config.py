@@ -135,9 +135,11 @@ async def test_email_connection(email_id: int, db: AsyncSession = Depends(get_db
     
     proxy_str = acc.proxy_url if acc.proxy_url else global_proxy
     
-    # 把网络探测由于是阻塞式的丢进线程里执行
+    # 把网络探测由于是阻塞式的丢进线程里执行，并喂给它主协程环来推流
+    main_loop = asyncio.get_running_loop()
     res = await asyncio.to_thread(
         test_imap_connection_and_fetch_latest,
+        main_loop,
         acc.email, 
         acc.password, 
         acc.imap_server, 

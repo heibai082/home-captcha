@@ -166,12 +166,10 @@ def get_header(msg, header_name):
              text_content += string_byte
     return text_content
 
-def test_imap_connection_and_fetch_latest(email_addr: str, password: str, imap_server: str, imap_port: int, proxy_str: str):
-    """
-    用于前台手动测试特定邮箱的连通性并尝试找出最近的一条验证码邮件
-    """
+def test_imap_connection_and_fetch_latest(main_loop, email_addr, password, imap_server, imap_port, proxy_str):
     try:
         proxy_cfg = parse_proxy(proxy_str)
+        
         if proxy_cfg:
             client = ProxyIMAP4SSL(imap_server, imap_port, proxy_cfg[0], proxy_cfg[1], proxy_cfg[2])
         else:
@@ -180,7 +178,7 @@ def test_imap_connection_and_fetch_latest(email_addr: str, password: str, imap_s
         client.login(email_addr, password)
         client.select('INBOX')
         
-        # 获取所有的邮件ID，不用限定未读的
+        # 只取全部邮件最新5封验证测试
         status, response = client.search(None, 'ALL')
         if status != 'OK':
             client.logout()
@@ -196,21 +194,21 @@ def test_imap_connection_and_fetch_latest(email_addr: str, password: str, imap_s
                 
             raw_email = data[0][1]
             msg_obj = email.message_from_bytes(raw_email)
-            
             content = extract_email_text(msg_obj)
             code = extract_code(content)
-            
             if code:
-                # 找到带有验证码的最近一封
-                date_str = get_header(msg_obj, "Date")
+                date = get_header(msg_obj, "Date")
                 subject = get_header(msg_obj, "Subject")
+                
+                # 新增功能：手工点击测试时，不仅前台弹窗反馈，同时也顺着Webhook把它丢进您的手机推送里核实效果！
+                asyncio.run_coroutine_threadsafe(
+                    dispatch_webhook(f"📧人工连通测试 ({email_addr})", content, code), 
+                    main_loop
+                )
+                
                 client.logout()
-                return {
-                    "status": "success", 
-                    "msg": "网络连通测试完美成功！且成功命中历史验证码。", 
-                    "data": {"code": code, "date": date_str, "subject": subject}
-                }
-        
+                return {"status": "success", "msg": "连通性好极了！并且成功扒出一条历史验证码！并在后台向您手机推流。如有打扰请见谅", "data": {"code": code, "subject": subject, "date": date}}
+                    
         client.logout()
         return {"status": "success", "msg": "登入测试成功！但在最新的10封邮件里没有提取出符合规则的验证码。"}
         
